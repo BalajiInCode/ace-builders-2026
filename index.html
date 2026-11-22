@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GymKhata - Back Office</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>GymKhata</h1>
+    <p class="subtitle">Small gym back office (demo data)</p>
+  </header>
+
+  <nav class="tabs" aria-label="Main sections">
+    <button type="button" class="tab is-active" data-target="members" aria-selected="true">Members</button>
+    <button type="button" class="tab" data-target="invoices-expenses" aria-selected="false">Invoices &amp; Expenses</button>
+    <button type="button" class="tab" data-target="dashboard" aria-selected="false">Dashboard</button>
+    <button type="button" class="tab" data-target="reminders" aria-selected="false">Reminders</button>
+    <button type="button" class="tab" data-target="forecast" aria-selected="false">Forecast</button>
+  </nav>
+
+  <main class="content">
+    <section id="members" class="tab-section" aria-labelledby="members-heading">
+      <h2 id="members-heading">Members</h2>
+      <ul id="member-list" class="member-list"></ul>
+    </section>
+
+    <section id="invoices-expenses" class="tab-section" aria-labelledby="invoices-expenses-heading" hidden>
+      <h2 id="invoices-expenses-heading">Invoices &amp; Expenses</h2>
+      <p>Coming soon</p>
+    </section>
+
+    <section id="dashboard" class="tab-section" aria-labelledby="dashboard-heading" hidden>
+      <h2 id="dashboard-heading">Dashboard</h2>
+      <p>Coming soon</p>
+    </section>
+
+    <section id="reminders" class="tab-section" aria-labelledby="reminders-heading" hidden>
+      <h2 id="reminders-heading">Reminders</h2>
+      <p>Coming soon</p>
+    </section>
+
+    <section id="forecast" class="tab-section" aria-labelledby="forecast-heading" hidden>
+      <h2 id="forecast-heading">Forecast</h2>
+      <p>Coming soon</p>
+    </section>
+  </main>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
