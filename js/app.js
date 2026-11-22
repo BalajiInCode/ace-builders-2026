@@ -4,6 +4,8 @@
   "use strict";
 
   var STORAGE_KEY = "gymkhata";
+  var storage = null;
+  var data = null;
   var FEES = { "monthly": 1000, "3 months": 2700, "yearly": 9000 };
   var DURATION_DAYS = { "monthly": 30, "3 months": 90, "yearly": 365 };
   var PLANS = ["monthly", "3 months", "yearly"];
@@ -279,13 +281,514 @@
     }
   }
 
+  /* ---------- formatting helpers ---------- */
+
+  function formatRs(amount) {
+    return "Rs " + String(Math.round(Number(amount))).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+
+  function parseISODate(str) {
+    if (!str) return null;
+    var parts = str.split("-");
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10);
+    var d = parseInt(parts[2], 10);
+    return new Date(y, m - 1, d);
+  }
+
+  function daysBetween(fromDate, toDate) {
+    var from = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
+    var to = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+    return Math.round((to - from) / 86400000);
+  }
+
+
+  /* ---------- data access ---------- */
+
+  function saveData() {
+    if (!storage) return;
+    try {
+      storage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      // Ignore write failure; data stays in memory for this session.
+    }
+  }
+
+  function findMember(memberId) {
+    for (var i = 0; i < data.members.length; i++) {
+      if (data.members[i].id === memberId) return data.members[i];
+    }
+    return null;
+  }
+
+  function findInvoice(invoiceNo) {
+    for (var i = 0; i < data.invoices.length; i++) {
+      if (data.invoices[i].invoiceNo === invoiceNo) return data.invoices[i];
+    }
+    return null;
+  }
+
+  function numericSuffix(str) {
+    var m = /(\d+)$/.exec(String(str));
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function nextInvoiceNo() {
+    var max = 0;
+    for (var i = 0; i < data.invoices.length; i++) {
+      max = Math.max(max, numericSuffix(data.invoices[i].invoiceNo));
+    }
+    return "INV-" + String(max + 1).padStart(3, "0");
+  }
+
+  function nextExpenseId() {
+    var max = 0;
+    for (var i = 0; i < data.expenses.length; i++) {
+      max = Math.max(max, numericSuffix(data.expenses[i].id));
+    }
+    return "E" + pad2(max + 1);
+  }
+
+  function showError(el, msg) {
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
+  function hideError(el) {
+    if (!el) return;
+    el.textContent = "";
+    el.hidden = true;
+  }
+
+  /* ---------- invoices ---------- */
+
+  function isOverdue(invoice, todayStr) {
+    return invoice.status !== "paid" && invoice.dueDate < todayStr;
+  }
+
+  function invoiceGroup(invoice, todayStr) {
+    if (isOverdue(invoice, todayStr)) return 0;
+    if (invoice.status !== "paid") return 1;
+    return 2;
+  }
+
+  function sortInvoices(list, today) {
+    var todayStr = toISODate(today);
+    var copy = list.slice();
+
+    copy.sort(function (a, b) {
+      var ga = invoiceGroup(a, todayStr);
+      var gb = invoiceGroup(b, todayStr);
+      if (ga !== gb) return ga - gb;
+
+      if (ga === 0) {
+        // Most days overdue first.
+        var daysA = daysBetween(parseISODate(a.dueDate), today);
+        var daysB = daysBetween(parseISODate(b.dueDate), today);
+        return daysB - daysA;
+      }
+      if (ga === 1) {
+        // Nearest due date first.
+        return a.dueDate < b.dueDate ? -1 : (a.dueDate > b.dueDate ? 1 : 0);
+      }
+      // Paid: latest paid date first.
+      var pa = a.paidDate || "";
+      var pb = b.paidDate || "";
+      return pa < pb ? 1 : (pa > pb ? -1 : 0);
+    });
+
+    return copy;
+  }
+
+  function buildInvoiceItem(invoice, today) {
+    var li = document.createElement("li");
+    li.className = "invoice-card";
+
+    var header = document.createElement("div");
+    header.className = "invoice-card-header";
+
+    var title = document.createElement("h3");
+    title.className = "invoice-no";
+    title.textContent = invoice.invoiceNo;
+    header.appendChild(title);
+
+    if (isOverdue(invoice, toISODate(today))) {
+      var days = Math.max(1, daysBetween(parseISODate(invoice.dueDate), today));
+      var label = document.createElement("span");
+      label.className = "invoice-overdue";
+      label.textContent = "Overdue by " + days + " days";
+      header.appendChild(label);
+    }
+
+    li.appendChild(header);
+
+    var member = findMember(invoice.memberId);
+    var dl = document.createElement("dl");
+    dl.className = "invoice-details";
+    makeDetailRow(dl, "Member", member ? member.name : invoice.memberId);
+    makeDetailRow(dl, "Amount", formatRs(invoice.amount));
+    makeDetailRow(dl, "Issue date", invoice.issueDate);
+    makeDetailRow(dl, "Due date", invoice.dueDate);
+    makeDetailRow(dl, "Status", invoice.status);
+    makeDetailRow(dl, "Paid date", invoice.paidDate || "-");
+    li.appendChild(dl);
+
+    var actions = document.createElement("div");
+    actions.className = "invoice-actions";
+
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "btn invoice-toggle-btn";
+    toggle.setAttribute("data-invoice-no", invoice.invoiceNo);
+    toggle.textContent = invoice.status === "paid" ? "Mark pending" : "Mark paid";
+    actions.appendChild(toggle);
+
+    var view = document.createElement("button");
+    view.type = "button";
+    view.className = "btn invoice-view-btn";
+    view.setAttribute("data-invoice-no", invoice.invoiceNo);
+    view.textContent = "View";
+    actions.appendChild(view);
+
+    li.appendChild(actions);
+    return li;
+  }
+
+  function renderInvoices() {
+    var list = document.getElementById("invoice-list");
+    if (!list) return;
+
+    list.textContent = "";
+    var today = todayMidnight();
+
+    if (!data.invoices.length) {
+      var empty = document.createElement("li");
+      empty.className = "empty-note";
+      empty.textContent = "No invoices yet.";
+      list.appendChild(empty);
+      return;
+    }
+
+    sortInvoices(data.invoices, today).forEach(function (invoice) {
+      list.appendChild(buildInvoiceItem(invoice, today));
+    });
+  }
+
+  function toggleInvoiceStatus(invoiceNo) {
+    var invoice = findInvoice(invoiceNo);
+    if (!invoice) return;
+
+    if (invoice.status === "paid") {
+      invoice.status = "pending";
+      invoice.paidDate = null;
+    } else {
+      invoice.status = "paid";
+      invoice.paidDate = toISODate(todayMidnight());
+    }
+
+    saveData();
+    renderInvoices();
+  }
+
+  function closeInvoiceView() {
+    var view = document.getElementById("invoice-view");
+    if (view) view.hidden = true;
+  }
+
+  function openInvoiceView(invoiceNo) {
+    var invoice = findInvoice(invoiceNo);
+    var view = document.getElementById("invoice-view");
+    var title = document.getElementById("invoice-view-title");
+    var dl = document.getElementById("invoice-view-details");
+    if (!invoice || !view || !dl) return;
+
+    var member = findMember(invoice.memberId);
+    if (title) title.textContent = "Invoice " + invoice.invoiceNo;
+
+    dl.textContent = "";
+    makeDetailRow(dl, "Invoice number", invoice.invoiceNo);
+    makeDetailRow(dl, "Member", member ? member.name : invoice.memberId);
+    makeDetailRow(dl, "Plan", member ? member.plan : "-");
+    makeDetailRow(dl, "Amount", formatRs(invoice.amount));
+    makeDetailRow(dl, "Issue date", invoice.issueDate);
+    makeDetailRow(dl, "Due date", invoice.dueDate);
+    makeDetailRow(dl, "Status", invoice.status);
+    makeDetailRow(dl, "Paid date", invoice.paidDate || "-");
+
+    view.hidden = false;
+  }
+
+  function setupInvoiceList() {
+    var list = document.getElementById("invoice-list");
+    if (!list) return;
+
+    list.addEventListener("click", function (event) {
+      var target = event.target;
+      if (!target || !target.getAttribute) return;
+      var invoiceNo = target.getAttribute("data-invoice-no");
+      if (!invoiceNo) return;
+
+      if (target.classList.contains("invoice-toggle-btn")) {
+        toggleInvoiceStatus(invoiceNo);
+      } else if (target.classList.contains("invoice-view-btn")) {
+        openInvoiceView(invoiceNo);
+      }
+    });
+  }
+
+  function setupInvoiceView() {
+    var view = document.getElementById("invoice-view");
+    var closeBtn = document.getElementById("invoice-view-close");
+    if (closeBtn) closeBtn.addEventListener("click", closeInvoiceView);
+    if (view) {
+      view.addEventListener("click", function (event) {
+        if (event.target === view) closeInvoiceView();
+      });
+    }
+  }
+
+  function populateMemberSelect() {
+    var select = document.getElementById("invoice-member");
+    if (!select) return;
+
+    select.textContent = "";
+    data.members.forEach(function (member) {
+      var opt = document.createElement("option");
+      opt.value = member.id;
+      opt.textContent = member.name;
+      select.appendChild(opt);
+    });
+  }
+
+  function syncInvoiceAmount() {
+    var select = document.getElementById("invoice-member");
+    var amountEl = document.getElementById("invoice-amount");
+    if (!select || !amountEl) return;
+
+    var member = findMember(select.value);
+    amountEl.value = member ? String(member.fee) : "";
+  }
+
+  function resetInvoiceForm() {
+    populateMemberSelect();
+
+    var select = document.getElementById("invoice-member");
+    var issueEl = document.getElementById("invoice-issue-date");
+    var dueEl = document.getElementById("invoice-due-date");
+    var today = todayMidnight();
+
+    if (select && select.options.length) select.selectedIndex = 0;
+    syncInvoiceAmount();
+    if (issueEl) issueEl.value = toISODate(today);
+    if (dueEl) dueEl.value = toISODate(addDays(today, 7));
+    hideError(document.getElementById("invoice-error"));
+  }
+
+  function handleInvoiceSubmit(event) {
+    event.preventDefault();
+
+    var select = document.getElementById("invoice-member");
+    var amountEl = document.getElementById("invoice-amount");
+    var issueEl = document.getElementById("invoice-issue-date");
+    var dueEl = document.getElementById("invoice-due-date");
+    var errorEl = document.getElementById("invoice-error");
+
+    var memberId = select ? select.value : "";
+    var amount = Number(amountEl ? amountEl.value : "");
+    var issueDate = issueEl ? issueEl.value : "";
+    var dueDate = dueEl ? dueEl.value : "";
+
+    if (!findMember(memberId)) {
+      showError(errorEl, "Select a member");
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      showError(errorEl, "Amount must be greater than 0");
+      return;
+    }
+    if (!issueDate) {
+      showError(errorEl, "Issue date is required");
+      return;
+    }
+    if (!dueDate) {
+      showError(errorEl, "Due date is required");
+      return;
+    }
+    if (dueDate < issueDate) {
+      showError(errorEl, "Due date cannot be before the issue date");
+      return;
+    }
+
+    data.invoices.push({
+      invoiceNo: nextInvoiceNo(),
+      memberId: memberId,
+      amount: amount,
+      issueDate: issueDate,
+      dueDate: dueDate,
+      status: "pending",
+      paidDate: null
+    });
+
+    saveData();
+    renderInvoices();
+    resetInvoiceForm();
+  }
+
+  function setupInvoiceForm() {
+    var form = document.getElementById("invoice-form");
+    var select = document.getElementById("invoice-member");
+
+    if (select) select.addEventListener("change", syncInvoiceAmount);
+    if (form) form.addEventListener("submit", handleInvoiceSubmit);
+
+    resetInvoiceForm();
+  }
+
+  /* ---------- expenses ---------- */
+
+  function buildExpenseItem(expense) {
+    var li = document.createElement("li");
+    li.className = "expense-card";
+
+    var header = document.createElement("div");
+    header.className = "expense-card-header";
+
+    var name = document.createElement("h3");
+    name.className = "expense-name";
+    name.textContent = expense.name;
+    header.appendChild(name);
+    li.appendChild(header);
+
+    var dl = document.createElement("dl");
+    dl.className = "expense-details";
+    makeDetailRow(dl, "Amount", formatRs(expense.amount));
+    makeDetailRow(dl, "Due date", expense.dueDate);
+    makeDetailRow(dl, "Repeats monthly", expense.repeatsMonthly ? "Yes" : "No");
+    li.appendChild(dl);
+
+    return li;
+  }
+
+  function renderExpenses() {
+    var list = document.getElementById("expense-list");
+    if (!list) return;
+
+    list.textContent = "";
+
+    if (!data.expenses.length) {
+      var empty = document.createElement("li");
+      empty.className = "empty-note";
+      empty.textContent = "No expenses yet.";
+      list.appendChild(empty);
+      return;
+    }
+
+    data.expenses.forEach(function (expense) {
+      list.appendChild(buildExpenseItem(expense));
+    });
+  }
+
+  function resetExpenseForm() {
+    var nameEl = document.getElementById("expense-name");
+    var amountEl = document.getElementById("expense-amount");
+    var dueEl = document.getElementById("expense-due-date");
+    var repeatsEl = document.getElementById("expense-repeats");
+
+    if (nameEl) nameEl.value = "";
+    if (amountEl) amountEl.value = "";
+    if (dueEl) dueEl.value = "";
+    if (repeatsEl) repeatsEl.checked = false;
+    hideError(document.getElementById("expense-error"));
+  }
+
+  function handleExpenseSubmit(event) {
+    event.preventDefault();
+
+    var nameEl = document.getElementById("expense-name");
+    var amountEl = document.getElementById("expense-amount");
+    var dueEl = document.getElementById("expense-due-date");
+    var repeatsEl = document.getElementById("expense-repeats");
+    var errorEl = document.getElementById("expense-error");
+
+    var name = nameEl ? nameEl.value.trim() : "";
+    var amount = Number(amountEl ? amountEl.value : "");
+    var dueDate = dueEl ? dueEl.value : "";
+
+    if (!name) {
+      showError(errorEl, "Name is required");
+      return;
+    }
+    if (isNaN(amount) || amount <= 0) {
+      showError(errorEl, "Amount must be greater than 0");
+      return;
+    }
+    if (!dueDate) {
+      showError(errorEl, "Due date is required");
+      return;
+    }
+
+    data.expenses.push({
+      id: nextExpenseId(),
+      name: name,
+      amount: amount,
+      dueDate: dueDate,
+      repeatsMonthly: repeatsEl ? repeatsEl.checked : false
+    });
+
+    saveData();
+    renderExpenses();
+    resetExpenseForm();
+  }
+
+  function setupExpenseForm() {
+    var form = document.getElementById("expense-form");
+    if (form) form.addEventListener("submit", handleExpenseSubmit);
+  }
+
+  /* ---------- reset ---------- */
+
+  function setupReset() {
+    var btn = document.getElementById("reset-demo-btn");
+    if (!btn) return;
+
+    btn.addEventListener("click", function () {
+      if (!confirm("Reset all data to the demo sample?")) return;
+
+      if (storage) {
+        try {
+          storage.removeItem(STORAGE_KEY);
+        } catch (e) {
+          // Ignore; loadData below still returns a fresh sample.
+        }
+      }
+
+      data = loadData();
+      renderMembers(data);
+      renderInvoices();
+      renderExpenses();
+      resetInvoiceForm();
+      resetExpenseForm();
+    });
+  }
+
   /* ---------- init ---------- */
 
   function init() {
-    var data = loadData();
+    storage = getStorage();
+    data = loadData();
     renderMembers(data);
     setupTabs();
+
+    setupInvoiceForm();
+    setupInvoiceList();
+    setupInvoiceView();
+    setupExpenseForm();
+    setupReset();
+    renderInvoices();
+    renderExpenses();
   }
+
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

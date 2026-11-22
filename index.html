@@ -28,7 +28,41 @@
 
     <section id="invoices-expenses" class="tab-section" aria-labelledby="invoices-expenses-heading" hidden>
       <h2 id="invoices-expenses-heading">Invoices &amp; Expenses</h2>
-      <p>Coming soon</p>
+      <button type="button" id="reset-demo-btn" class="btn btn-secondary">Reset demo data</button>
+      <h3>Invoices</h3>
+      <ul id="invoice-list" class="invoice-list"></ul>
+      <form id="invoice-form" class="form" novalidate>
+        <label for="invoice-member">Member</label>
+        <select id="invoice-member"></select>
+        <label for="invoice-amount">Amount (Rs)</label>
+        <input type="number" id="invoice-amount" min="1" step="1">
+        <label for="invoice-issue-date">Issue date</label>
+        <input type="date" id="invoice-issue-date">
+        <label for="invoice-due-date">Due date</label>
+        <input type="date" id="invoice-due-date">
+        <p id="invoice-error" class="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary">Create invoice</button>
+      </form>
+      <div id="invoice-view" class="modal" hidden>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="invoice-view-title">
+          <h3 id="invoice-view-title">Invoice</h3>
+          <dl id="invoice-view-details" class="details"></dl>
+          <button type="button" id="invoice-view-close" class="btn btn-secondary">Close</button>
+        </div>
+      </div>
+      <h3>Expenses</h3>
+      <ul id="expense-list" class="expense-list"></ul>
+      <form id="expense-form" class="form" novalidate>
+        <label for="expense-name">Name</label>
+        <input type="text" id="expense-name">
+        <label for="expense-amount">Amount (Rs)</label>
+        <input type="number" id="expense-amount" min="1" step="1">
+        <label for="expense-due-date">Due date</label>
+        <input type="date" id="expense-due-date">
+        <label><input type="checkbox" id="expense-repeats"> Repeats monthly</label>
+        <p id="expense-error" class="form-error" role="alert" hidden></p>
+        <button type="submit" class="btn btn-primary">Add expense</button>
+      </form>
     </section>
 
     <section id="dashboard" class="tab-section" aria-labelledby="dashboard-heading" hidden>
