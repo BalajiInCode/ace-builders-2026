@@ -605,3 +605,130 @@ body {
   }
 }
 
+
+/* What-if */
+.forecast-bar-whatif {
+  fill: #f59e0b;
+}
+
+.forecast-bar-whatif.is-negative {
+  fill: #7f1d1d;
+}
+
+.forecast-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #52606d;
+}
+
+.forecast-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.forecast-legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+.forecast-legend-swatch.is-base {
+  background: #1d4ed8;
+}
+
+.forecast-legend-swatch.is-whatif {
+  background: #f59e0b;
+}
+
+.whatif-card {
+  background: #ffffff;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.whatif-card h3 {
+  margin-top: 0;
+}
+
+.whatif-note {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #52606d;
+}
+
+.whatif-controls {
+  margin-top: 0.75rem;
+}
+
+.whatif-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.whatif-slider-row input[type=range] {
+  flex: 1 1 auto;
+  width: auto;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+}
+
+.whatif-value {
+  min-width: 3.5rem;
+  text-align: right;
+  font-weight: 600;
+}
+
+.whatif-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.whatif-actions .btn {
+  flex: 1 1 calc(50% - 0.25rem);
+}
+
+.whatif-same {
+  margin: 0.75rem 0 0.5rem;
+  color: #15803d;
+  font-weight: 600;
+}
+
+.whatif-suggestion {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+}
+
+.whatif-suggestion h4 {
+  margin: 0 0 0.25rem;
+  font-size: 0.95rem;
+}
+
+.whatif-suggestion p {
+  margin: 0 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.whatif-reminders-btn {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .whatif-reminders-btn {
+    width: auto;
+  }
+}
+

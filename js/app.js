@@ -1252,11 +1252,13 @@
     if (offset >= 0 && offset < amounts.length) amounts[offset] += amount;
   }
 
-  function computeForecast(horizonDays, renewalRate, excludedMemberIds) {
+  // overdueDelayDays (optional, default 7): days from today until overdue invoices are collected.
+  function computeForecast(horizonDays, renewalRate, excludedMemberIds, overdueDelayDays) {
     var today = todayMidnight();
     var todayStr = toISODate(today);
     var rate = Number(renewalRate) || 0;
     var excluded = excludedMemberIds || [];
+    var overdueDelay = overdueDelayDays === undefined ? 7 : (Number(overdueDelayDays) || 0);
     var openingCash = Number(data.settings.openingCashBalance) || 0;
     var incomeByDay = [];
     var expenseByDay = [];
@@ -1267,7 +1269,7 @@
       expenseByDay.push(0);
     }
 
-    // 1) Pending invoices: overdue ones collected 7 days from today, others on due date.
+    // 1) Pending invoices: overdue ones collected overdueDelay days from today, others on due date.
     data.invoices.forEach(function (invoice) {
       if (invoice.status === "paid") return;
       var member = findMember(invoice.memberId);
@@ -1275,7 +1277,7 @@
 
       var amount = Number(invoice.amount) || 0;
       if (isOverdue(invoice, todayStr)) {
-        addAtOffset(incomeByDay, 7, amount);
+        addAtOffset(incomeByDay, overdueDelay, amount);
         return;
       }
       var due = parseISODate(invoice.dueDate);
@@ -1401,6 +1403,7 @@
     data.settings.renewalRate = ratePercent / 100;
     saveData();
     showError(statusEl, "Settings saved");
+    resetWhatIfControls();
     renderForecast();
   }
 
@@ -1435,7 +1438,8 @@
   }
 
   // Bar chart of closing cash per week, inline SVG. Zero line is drawn; negative weeks are red.
-  function buildClosingChart(weeks) {
+  // If whatIfWeeks is given, a second bar per week shows the what-if closing cash.
+  function buildClosingChart(weeks, whatIfWeeks) {
     var WIDTH = 320;
     var HEIGHT = 200;
     var TOP = 10;
@@ -1443,7 +1447,8 @@
 
     var minVal = 0;
     var maxVal = 0;
-    weeks.forEach(function (week) {
+    var allWeeks = whatIfWeeks ? weeks.concat(whatIfWeeks) : weeks;
+    allWeeks.forEach(function (week) {
       minVal = Math.min(minVal, week.closingCash);
       maxVal = Math.max(maxVal, week.closingCash);
     });
@@ -1462,28 +1467,38 @@
 
     var zeroY = yOf(0);
     var slotW = WIDTH / weeks.length;
-    var barW = slotW * 0.6;
+    var barW = whatIfWeeks ? slotW * 0.35 : slotW * 0.6;
+    var GAP = 2;
 
-    weeks.forEach(function (week, i) {
-      var negative = week.closingCash < 0;
-      var valueY = yOf(week.closingCash);
+    function addBar(x, value, week, seriesName, barClass) {
+      var valueY = yOf(value);
       var barTop = Math.min(valueY, zeroY);
       var barH = Math.max(Math.abs(valueY - zeroY), 1);
 
       var rect = document.createElementNS(SVG_NS, "rect");
-      rect.setAttribute("x", String(i * slotW + (slotW - barW) / 2));
+      rect.setAttribute("x", String(x));
       rect.setAttribute("y", String(barTop));
       rect.setAttribute("width", String(barW));
       rect.setAttribute("height", String(barH));
-      rect.setAttribute("class", negative ? "forecast-bar is-negative" : "forecast-bar");
+      rect.setAttribute("class", value < 0 ? barClass + " is-negative" : barClass);
 
       var title = document.createElementNS(SVG_NS, "title");
-      title.textContent = week.label + ": " + formatRs(week.closingCash);
+      title.textContent = (seriesName ? seriesName + " " : "") + week.label + ": " + formatRs(value);
       rect.appendChild(title);
       svg.appendChild(rect);
+    }
+
+    weeks.forEach(function (week, i) {
+      var center = i * slotW + slotW / 2;
+      if (whatIfWeeks) {
+        addBar(center - GAP / 2 - barW, week.closingCash, week, "Base", "forecast-bar");
+        addBar(center + GAP / 2, whatIfWeeks[i].closingCash, week, "What-if", "forecast-bar forecast-bar-whatif");
+      } else {
+        addBar(center - barW / 2, week.closingCash, week, "", "forecast-bar");
+      }
 
       var label = document.createElementNS(SVG_NS, "text");
-      label.setAttribute("x", String(i * slotW + slotW / 2));
+      label.setAttribute("x", String(center));
       label.setAttribute("y", String(HEIGHT - 6));
       label.setAttribute("class", "forecast-bar-label");
       label.textContent = "W" + (i + 1);
@@ -1501,6 +1516,84 @@
     return svg;
   }
 
+
+  function forecastsDiffer(a, b) {
+    if (a.endCash !== b.endCash || a.lowest.cash !== b.lowest.cash ||
+        a.firstNegativeDate !== b.firstNegativeDate) {
+      return true;
+    }
+    for (var i = 0; i < a.weeks.length; i++) {
+      if (a.weeks[i].closingCash !== b.weeks[i].closingCash) return true;
+    }
+    return false;
+  }
+
+  // -150 -> "-Rs 150", 150 -> "+Rs 150"
+  function formatSignedRs(amount) {
+    return amount < 0 ? "-" + formatRs(-amount) : "+" + formatRs(amount);
+  }
+
+  function buildCompareRow(label, baseText, whatIfText, whatIfNegative, diffText, diffNegative) {
+    var tr = document.createElement("tr");
+
+    var th = document.createElement("th");
+    th.setAttribute("scope", "row");
+    th.textContent = label;
+    tr.appendChild(th);
+
+    tr.appendChild(makeTableCell(baseText, false));
+    tr.appendChild(makeTableCell(whatIfText, whatIfNegative));
+    tr.appendChild(makeTableCell(diffText, diffNegative));
+    return tr;
+  }
+
+  function buildChartLegend() {
+    var legend = document.createElement("div");
+    legend.className = "forecast-legend";
+
+    [["is-base", "Base"], ["is-whatif", "What-if"]].forEach(function (pair) {
+      var item = document.createElement("span");
+      item.className = "forecast-legend-item";
+      var swatch = document.createElement("span");
+      swatch.className = "forecast-legend-swatch " + pair[0];
+      item.appendChild(swatch);
+      item.appendChild(document.createTextNode(pair[1]));
+      legend.appendChild(item);
+    });
+
+    return legend;
+  }
+
+  // "A, B, C, D, E and 2 more" (at most 5 names shown)
+  function listNames(names) {
+    var shown = names.slice(0, 5).join(", ");
+    if (names.length > 5) shown += " and " + (names.length - 5) + " more";
+    return shown;
+  }
+
+  // Rule-based suggestion for the what-if result. No AI.
+  function buildWhatIfSuggestion(whatIf, today) {
+    if (whatIf.lowest.cash < 0) {
+      var dateText = formatDisplayDate(whatIf.firstNegativeDate);
+      var overdue = buildPaymentReminders(today);
+      if (overdue.length) {
+        var total = 0;
+        overdue.forEach(function (entry) { total += entry.total; });
+        return "Cash may go below Rs 0 on " + dateText + ". Send payment reminders this week to these " +
+          overdue.length + " members: " + listNames(overdue.map(function (entry) { return entry.member.name; })) +
+          ". Their total overdue amount is " + formatRs(total) + ".";
+      }
+      return "Cash may go below Rs 0 on " + dateText + ". Review upcoming expenses and chase pending invoices.";
+    }
+
+    var renewals = buildRenewalReminders(today);
+    if (renewals.length) {
+      return "Send renewal reminders to these " + renewals.length + " members this week: " +
+        listNames(renewals.map(function (entry) { return entry.member.name; })) + ".";
+    }
+    return "Cash looks healthy in this scenario. Keep following up on pending invoices.";
+  }
+
   function renderForecast() {
     var summaryEl = document.getElementById("forecast-summary");
     var lowestEl = document.getElementById("forecast-lowest");
@@ -1512,6 +1605,20 @@
 
     var result = computeForecast(forecastHorizon, data.settings.renewalRate, []);
     syncHorizonButtons();
+
+    var rateEl = document.getElementById("whatif-renewal-rate");
+    var delayEl = document.getElementById("whatif-overdue-delay");
+    var rateValueEl = document.getElementById("whatif-renewal-value");
+    var compareBody = document.getElementById("whatif-comparison-body");
+    var sameNoteEl = document.getElementById("whatif-same-note");
+    var whatIfWarningEl = document.getElementById("whatif-warning");
+    var suggestionEl = document.getElementById("whatif-suggestion-text");
+    if (!rateEl || !delayEl || !rateValueEl || !compareBody || !sameNoteEl || !whatIfWarningEl || !suggestionEl) return;
+
+    // What-if runs the same formula with the what-if renewal rate and overdue delay.
+    var whatIf = computeForecast(forecastHorizon, Number(rateEl.value) / 100, [], Number(delayEl.value));
+    var changed = forecastsDiffer(result, whatIf);
+    rateValueEl.textContent = rateEl.value + "%";
 
     summaryEl.textContent = "";
     summaryEl.appendChild(makeSummaryCard("Expected income", formatRs(result.totalIncome)));
@@ -1536,12 +1643,92 @@
     });
 
     chartEl.textContent = "";
-    chartEl.appendChild(buildClosingChart(result.weeks));
+    chartEl.appendChild(buildClosingChart(result.weeks, changed ? whatIf.weeks : null));
+    if (changed) chartEl.appendChild(buildChartLegend());
+
+    compareBody.textContent = "";
+    var endDiff = whatIf.endCash - result.endCash;
+    compareBody.appendChild(buildCompareRow("Cash in " + forecastHorizon + " days",
+      formatRs(result.endCash), formatRs(whatIf.endCash), whatIf.endCash < 0,
+      formatSignedRs(endDiff), endDiff < 0));
+    var lowDiff = whatIf.lowest.cash - result.lowest.cash;
+    compareBody.appendChild(buildCompareRow("Lowest cash point",
+      formatRs(result.lowest.cash), formatRs(whatIf.lowest.cash), whatIf.lowest.cash < 0,
+      formatSignedRs(lowDiff), lowDiff < 0));
+    compareBody.appendChild(buildCompareRow("Lowest cash date",
+      formatDisplayDate(result.lowest.date), formatDisplayDate(whatIf.lowest.date), false, "-", false));
+
+    sameNoteEl.hidden = changed;
+    if (changed && whatIf.firstNegativeDate) {
+      whatIfWarningEl.textContent = "What-if warning: cash goes below Rs 0 on " +
+        formatDisplayDate(whatIf.firstNegativeDate) + ". Chase overdue fees or plan for this gap.";
+      whatIfWarningEl.hidden = false;
+    } else {
+      whatIfWarningEl.textContent = "";
+      whatIfWarningEl.hidden = true;
+    }
+
+    suggestionEl.textContent = buildWhatIfSuggestion(whatIf, todayMidnight());
 
     var pct = Math.round(result.renewalRate * 10000) / 100;
+    var whatIfText = changed
+      ? " What-if: renewal rate " + rateEl.value + "%, overdue payments arrive after " + delayEl.value + " days."
+      : "";
     assumptionsEl.textContent = "Assumptions: overdue invoices are assumed collected in 7 days; " +
-      "renewals are counted at your renewal rate (" + pct + "%). " +
+      "renewals are counted at your renewal rate (" + pct + "%)." + whatIfText + " " +
       "This is an estimate based on sample data and your renewal rate, not a guarantee.";
+  }
+
+  function savedRatePercent() {
+    return Math.round((Number(data.settings.renewalRate) || 0) * 10000) / 100;
+  }
+
+  // Sets the what-if controls only. null leaves that control unchanged. Never writes data.
+  function setWhatIfControls(rate, delay) {
+    var rateEl = document.getElementById("whatif-renewal-rate");
+    var delayEl = document.getElementById("whatif-overdue-delay");
+    if (rateEl && rate !== null) rateEl.value = String(rate);
+    if (delayEl && delay !== null) delayEl.value = String(delay);
+  }
+
+  function resetWhatIfControls() {
+    setWhatIfControls(savedRatePercent(), 7);
+  }
+
+  function setupWhatIf() {
+    var rateEl = document.getElementById("whatif-renewal-rate");
+    var delayEl = document.getElementById("whatif-overdue-delay");
+    if (rateEl) rateEl.addEventListener("input", renderForecast);
+    if (delayEl) delayEl.addEventListener("change", renderForecast);
+
+    function onClick(id, handler) {
+      var btn = document.getElementById(id);
+      if (btn) btn.addEventListener("click", handler);
+    }
+
+    onClick("whatif-drop-renewals-btn", function () {
+      setWhatIfControls(Math.min(50, savedRatePercent()), null);
+      renderForecast();
+    });
+    onClick("whatif-late-overdue-btn", function () {
+      setWhatIfControls(null, 15);
+      renderForecast();
+    });
+    onClick("whatif-both-btn", function () {
+      setWhatIfControls(Math.min(50, savedRatePercent()), 15);
+      renderForecast();
+    });
+    onClick("whatif-reset-btn", function () {
+      resetWhatIfControls();
+      renderForecast();
+    });
+    onClick("whatif-reminders-btn", function () {
+      // Reuse the existing tab switching: clicking the Reminders tab runs showSection().
+      var tab = document.querySelector(".tab[data-target='reminders']");
+      if (tab) tab.click();
+    });
+
+    resetWhatIfControls();
   }
 
   function setupForecast() {
@@ -1555,6 +1742,8 @@
         renderForecast();
       });
     }
+
+    setupWhatIf();
   }
 
   /* ---------- reset ---------- */

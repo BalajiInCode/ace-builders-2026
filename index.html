@@ -125,6 +125,55 @@
       <h3>Closing cash per week</h3>
       <div id="forecast-chart" class="forecast-chart"></div>
 
+      <section id="whatif-card" class="whatif-card" aria-labelledby="whatif-heading">
+        <h3 id="whatif-heading">What-if</h3>
+        <p class="whatif-note">Changes what is shown only. Saved settings are not changed.</p>
+
+        <div class="form whatif-controls">
+          <label for="whatif-renewal-rate">Renewal rate (%)</label>
+          <div class="whatif-slider-row">
+            <input type="range" id="whatif-renewal-rate" min="0" max="100" step="5">
+            <output id="whatif-renewal-value" for="whatif-renewal-rate" class="whatif-value"></output>
+          </div>
+          <label for="whatif-overdue-delay">Overdue payments arrive after</label>
+          <select id="whatif-overdue-delay">
+            <option value="7">7 days</option>
+            <option value="15">15 days</option>
+            <option value="30">30 days</option>
+          </select>
+        </div>
+
+        <div class="whatif-actions">
+          <button type="button" id="whatif-drop-renewals-btn" class="btn btn-secondary">Renewals drop to 50%</button>
+          <button type="button" id="whatif-late-overdue-btn" class="btn btn-secondary">Overdue paid 15 days late</button>
+          <button type="button" id="whatif-both-btn" class="btn btn-primary">Both</button>
+          <button type="button" id="whatif-reset-btn" class="btn btn-secondary">Reset what-if</button>
+        </div>
+
+        <p id="whatif-same-note" class="whatif-same" role="status" hidden>Same as base</p>
+        <div class="table-scroll">
+          <table class="forecast-table">
+            <thead>
+              <tr>
+                <th scope="col">Measure</th>
+                <th scope="col">Base</th>
+                <th scope="col">What-if</th>
+                <th scope="col">Difference</th>
+              </tr>
+            </thead>
+            <tbody id="whatif-comparison-body"></tbody>
+          </table>
+        </div>
+        <p id="whatif-warning" class="forecast-warning" role="alert" hidden></p>
+
+        <div class="whatif-suggestion">
+          <h4>Suggested next action</h4>
+          <p id="whatif-suggestion-text"></p>
+          <button type="button" id="whatif-reminders-btn" class="btn btn-primary whatif-reminders-btn">Open Reminders</button>
+        </div>
+      </section>
+
+
       <p id="forecast-assumptions" class="forecast-assumptions"></p>
     </section>
   </main>

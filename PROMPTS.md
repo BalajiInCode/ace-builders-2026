@@ -33,3 +33,9 @@
 **Result:** Forecast built in index.html, js/app.js and css/style.css.
 **Issues:** None in the build. Nexen had not opened a browser, so I verified the numbers myself against an independent calculation.
 **Checked:** 30/60/90 day numbers match; invalid settings show errors; changing renewal rate to 40% makes cash go negative with a warning.
+
+## Prompt 5B: What-if and suggested action
+**Prompt:** Add a what-if card to Forecast: renewal-rate slider, overdue-delay select, quick scenarios, Base vs What-if comparison, two-colour chart, rule-based suggested action, and "Open Reminders" button. computeForecast reused with an extra overdueDelayDays parameter.
+**Result:** What-if built; base numbers unchanged.
+**Issues:** None in the build. Nexen had not run it in a browser, so I verified it myself against an independent calculation.
+**Checked:** Renewals 50% on 90 days makes cash Rs -6,900 with a warning and suggested reminders; reset, horizon switch and Open Reminders work; saved settings unchanged after refresh.
