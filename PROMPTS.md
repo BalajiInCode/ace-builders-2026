@@ -15,3 +15,9 @@
 **Result:** All features built across index.html, css/style.css, js/app.js.
 **Issues:** Nexen asked permission to edit index.html and css, which I allowed. The page then showed "storage is not defined" because two variables were not declared. A bug-fix prompt solved it.
 **Checked:** Created an invoice, validation errors, mark paid, expense add, and refresh; all work.
+
+## Prompt 3: Dashboard
+**Prompt:** Build the Dashboard tab: 4 summary cards, "who owes how much and since when" list, and "expires this week" list. Read-only, refreshes on every open, reuses the overdue rule from the Invoices tab.
+**Result:** Dashboard built in index.html, js/app.js and css/style.css.
+**Issues:** Nexen asked where to put a temporary test script; I chose a scratch folder inside the project.
+**Checked:** Cards, sorting, expiring list match the Members badges; marking an invoice paid changes the Dashboard numbers.

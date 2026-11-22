@@ -272,6 +272,7 @@
         tabs[j].classList.toggle("is-active", active);
         tabs[j].setAttribute("aria-selected", active ? "true" : "false");
       }
+      if (targetId === "dashboard") renderDashboard();
     }
 
     for (var k = 0; k < tabs.length; k++) {
@@ -744,6 +745,217 @@
   function setupExpenseForm() {
     var form = document.getElementById("expense-form");
     if (form) form.addEventListener("submit", handleExpenseSubmit);
+  }
+
+  /* ---------- dashboard ---------- */
+
+  function buildSummary(today) {
+    var todayStr = toISODate(today);
+    var totalPending = 0;
+    var totalOverdue = 0;
+    var overdueMembers = {};
+    var membersWithOverdue = 0;
+
+    data.invoices.forEach(function (invoice) {
+      if (invoice.status === "paid") return;
+      totalPending += Number(invoice.amount);
+
+      if (isOverdue(invoice, todayStr)) {
+        totalOverdue += Number(invoice.amount);
+        if (!overdueMembers[invoice.memberId]) {
+          overdueMembers[invoice.memberId] = true;
+          membersWithOverdue++;
+        }
+      }
+    });
+
+    var expiringCount = 0;
+    data.members.forEach(function (member) {
+      if (isExpiringSoon(member, today)) expiringCount++;
+    });
+
+    return {
+      totalPending: totalPending,
+      totalOverdue: totalOverdue,
+      membersWithOverdue: membersWithOverdue,
+      expiringCount: expiringCount
+    };
+  }
+
+  function buildOwesList(today) {
+    var todayStr = toISODate(today);
+    var groups = {};
+    var entries = [];
+
+    data.invoices.forEach(function (invoice) {
+      if (invoice.status === "paid") return;
+
+      var entry = groups[invoice.memberId];
+      if (!entry) {
+        var member = findMember(invoice.memberId);
+        entry = {
+          memberId: invoice.memberId,
+          name: member ? member.name : invoice.memberId,
+          total: 0,
+          oldestDue: invoice.dueDate,
+          hasOverdue: false,
+          overdueSince: null,
+          daysOverdue: 0
+        };
+        groups[invoice.memberId] = entry;
+        entries.push(entry);
+      }
+
+      entry.total += Number(invoice.amount);
+      if (invoice.dueDate < entry.oldestDue) entry.oldestDue = invoice.dueDate;
+
+      if (isOverdue(invoice, todayStr)) {
+        entry.hasOverdue = true;
+        if (entry.overdueSince === null || invoice.dueDate < entry.overdueSince) {
+          entry.overdueSince = invoice.dueDate;
+        }
+      }
+    });
+
+    entries.forEach(function (entry) {
+      entry.daysOverdue = entry.hasOverdue ? daysBetween(parseISODate(entry.overdueSince), today) : 0;
+    });
+
+    entries.sort(function (a, b) {
+      if (a.hasOverdue !== b.hasOverdue) return a.hasOverdue ? -1 : 1;
+      if (a.hasOverdue && a.daysOverdue !== b.daysOverdue) return b.daysOverdue - a.daysOverdue;
+      return b.total - a.total;
+    });
+
+    return entries;
+  }
+
+  function makeSummaryCard(label, value) {
+    var card = document.createElement("div");
+    card.className = "summary-card";
+
+    var labelEl = document.createElement("p");
+    labelEl.className = "summary-label";
+    labelEl.textContent = label;
+    card.appendChild(labelEl);
+
+    var valueEl = document.createElement("p");
+    valueEl.className = "summary-value";
+    valueEl.textContent = value;
+    card.appendChild(valueEl);
+
+    return card;
+  }
+
+  function makeEmptyItem(text) {
+    var li = document.createElement("li");
+    li.className = "empty-note";
+    li.textContent = text;
+    return li;
+  }
+
+  function buildOwesItem(entry) {
+    var li = document.createElement("li");
+    li.className = "dashboard-card";
+
+    var header = document.createElement("div");
+    header.className = "dashboard-card-header";
+
+    var name = document.createElement("h3");
+    name.className = "dashboard-name";
+    name.textContent = entry.name;
+    header.appendChild(name);
+
+    var pill = document.createElement("span");
+    if (entry.hasOverdue) {
+      pill.className = "invoice-overdue";
+      pill.textContent = "Overdue by " + entry.daysOverdue + (entry.daysOverdue === 1 ? " day" : " days");
+    } else {
+      pill.className = "dashboard-not-due";
+      pill.textContent = "Not due yet";
+    }
+    header.appendChild(pill);
+
+    li.appendChild(header);
+
+    var dl = document.createElement("dl");
+    dl.className = "details";
+    makeDetailRow(dl, "Pending", formatRs(entry.total));
+    makeDetailRow(dl, "Oldest due date", entry.oldestDue);
+    li.appendChild(dl);
+
+    return li;
+  }
+
+  function buildExpiringItem(member, today) {
+    var li = document.createElement("li");
+    li.className = "dashboard-card";
+
+    var header = document.createElement("div");
+    header.className = "dashboard-card-header";
+
+    var name = document.createElement("h3");
+    name.className = "dashboard-name";
+    name.textContent = member.name;
+    header.appendChild(name);
+    li.appendChild(header);
+
+    var daysLeft = daysBetween(today, parseISODate(member.endDate));
+    var leftText = daysLeft === 0 ? "Today" : (daysLeft === 1 ? "1 day left" : daysLeft + " days left");
+
+    var dl = document.createElement("dl");
+    dl.className = "details";
+    makeDetailRow(dl, "Plan", member.plan);
+    makeDetailRow(dl, "End date", member.endDate);
+    makeDetailRow(dl, "Days left", leftText);
+    li.appendChild(dl);
+
+    return li;
+  }
+
+  function renderDashboard() {
+    var summaryEl = document.getElementById("dashboard-summary");
+    var owesEl = document.getElementById("dashboard-owes-list");
+    var expiringEl = document.getElementById("dashboard-expiring-list");
+    if (!summaryEl || !owesEl || !expiringEl) return;
+
+    var today = todayMidnight();
+    var summary = buildSummary(today);
+
+    summaryEl.textContent = "";
+    summaryEl.appendChild(makeSummaryCard("Total pending", formatRs(summary.totalPending)));
+    summaryEl.appendChild(makeSummaryCard("Total overdue", formatRs(summary.totalOverdue)));
+    summaryEl.appendChild(makeSummaryCard("Members with overdue invoices", String(summary.membersWithOverdue)));
+    summaryEl.appendChild(makeSummaryCard("Expiring this week", String(summary.expiringCount)));
+
+    owesEl.textContent = "";
+    var owes = buildOwesList(today);
+    if (!owes.length) {
+      owesEl.appendChild(makeEmptyItem("No pending payments"));
+    } else {
+      if (!owes[0].hasOverdue) {
+        owesEl.appendChild(makeEmptyItem("No overdue payments"));
+      }
+      owes.forEach(function (entry) {
+        owesEl.appendChild(buildOwesItem(entry));
+      });
+    }
+
+    expiringEl.textContent = "";
+    var expiring = data.members.filter(function (member) {
+      return isExpiringSoon(member, today);
+    });
+    expiring.sort(function (a, b) {
+      return a.endDate < b.endDate ? -1 : (a.endDate > b.endDate ? 1 : 0);
+    });
+
+    if (!expiring.length) {
+      expiringEl.appendChild(makeEmptyItem("No members expiring this week"));
+    } else {
+      expiring.forEach(function (member) {
+        expiringEl.appendChild(buildExpiringItem(member, today));
+      });
+    }
   }
 
   /* ---------- reset ---------- */
