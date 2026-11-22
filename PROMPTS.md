@@ -27,3 +27,9 @@
 **Result:** Reminders built in index.html, js/app.js and css/style.css.
 **Issues:** None. Nexen noted the copy button and empty state were untested, so I tested them myself.
 **Checked:** Language switch, copy to clipboard, fallback, and the empty list after paying all invoices.
+
+## Prompt 5A: Forecast (base)
+**Prompt:** Build the base Forecast tab: settings card (opening cash, renewal rate), 30/60/90 day switch, computeForecast() following SPEC.md formula, summary cards, lowest cash point, week-by-week table, SVG chart.
+**Result:** Forecast built in index.html, js/app.js and css/style.css.
+**Issues:** None in the build. Nexen had not opened a browser, so I verified the numbers myself against an independent calculation.
+**Checked:** 30/60/90 day numbers match; invalid settings show errors; changing renewal rate to 40% makes cash go negative with a warning.

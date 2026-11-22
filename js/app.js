@@ -274,6 +274,10 @@
       }
       if (targetId === "dashboard") renderDashboard();
       if (targetId === "reminders") renderReminders();
+      if (targetId === "forecast") {
+        fillForecastSettings();
+        renderForecast();
+      }
     }
 
     for (var k = 0; k < tabs.length; k++) {
@@ -1227,6 +1231,332 @@
     }
   }
 
+  /* ---------- forecast ---------- */
+
+  var SVG_NS = "http://www.w3.org/2000/svg";
+  var forecastHorizon = 30;
+
+  function daysInMonth(year, monthIndex) {
+    return new Date(year, monthIndex + 1, 0).getDate();
+  }
+
+  // Same day of the month, clamped to the month's last day (e.g. 31 -> 30 in April).
+  function occurrenceInMonth(year, monthIndex, dayOfMonth) {
+    var first = new Date(year, monthIndex, 1);
+    var y = first.getFullYear();
+    var m = first.getMonth();
+    return new Date(y, m, Math.min(dayOfMonth, daysInMonth(y, m)));
+  }
+
+  function addAtOffset(amounts, offset, amount) {
+    if (offset >= 0 && offset < amounts.length) amounts[offset] += amount;
+  }
+
+  function computeForecast(horizonDays, renewalRate, excludedMemberIds) {
+    var today = todayMidnight();
+    var todayStr = toISODate(today);
+    var rate = Number(renewalRate) || 0;
+    var excluded = excludedMemberIds || [];
+    var openingCash = Number(data.settings.openingCashBalance) || 0;
+    var incomeByDay = [];
+    var expenseByDay = [];
+    var d;
+
+    for (d = 0; d < horizonDays; d++) {
+      incomeByDay.push(0);
+      expenseByDay.push(0);
+    }
+
+    // 1) Pending invoices: overdue ones collected 7 days from today, others on due date.
+    data.invoices.forEach(function (invoice) {
+      if (invoice.status === "paid") return;
+      var member = findMember(invoice.memberId);
+      if (!member) return;
+
+      var amount = Number(invoice.amount) || 0;
+      if (isOverdue(invoice, todayStr)) {
+        addAtOffset(incomeByDay, 7, amount);
+        return;
+      }
+      var due = parseISODate(invoice.dueDate);
+      if (!due) return;
+      addAtOffset(incomeByDay, daysBetween(today, due), amount);
+    });
+
+    // 2) Renewals: rate x fee on each end date, repeating every plan length.
+    data.members.forEach(function (member) {
+      if (excluded.indexOf(member.id) !== -1) return;
+      var duration = DURATION_DAYS[member.plan];
+      var endDate = parseISODate(member.endDate);
+      if (!duration || !endDate) return;
+
+      var firstEnd = daysBetween(today, endDate);
+      if (firstEnd < 0) return; // plan already ended before today
+
+      var amount = rate * (Number(member.fee) || 0);
+      for (var off = firstEnd; off < horizonDays; off += duration) {
+        addAtOffset(incomeByDay, off, amount);
+      }
+    });
+
+    // 3) Expenses: one-off on due date; monthly ones repeat on the same day each month.
+    var monthsToCheck = Math.ceil(horizonDays / 28) + 1;
+    data.expenses.forEach(function (expense) {
+      var due = parseISODate(expense.dueDate);
+      var amount = Number(expense.amount) || 0;
+      if (!due) return;
+
+      if (!expense.repeatsMonthly) {
+        addAtOffset(expenseByDay, daysBetween(today, due), amount);
+        return;
+      }
+      for (var k = 0; k < monthsToCheck; k++) {
+        var occurrence = occurrenceInMonth(today.getFullYear(), today.getMonth() + k, due.getDate());
+        if (occurrence < due) continue;
+        addAtOffset(expenseByDay, daysBetween(today, occurrence), amount);
+      }
+    });
+
+    // 4) Day-by-day cash, lowest point and first negative day.
+    var days = [];
+    var runningIncome = 0;
+    var runningExpenses = 0;
+    var firstNegativeDate = null;
+    var lowest = null;
+
+    for (d = 0; d < horizonDays; d++) {
+      runningIncome += incomeByDay[d];
+      runningExpenses += expenseByDay[d];
+      var cash = openingCash + runningIncome - runningExpenses;
+      var dateStr = toISODate(addDays(today, d));
+      days.push({ date: dateStr, cash: cash });
+
+      if (firstNegativeDate === null && cash < 0) firstNegativeDate = dateStr;
+      if (lowest === null || cash < lowest.cash) lowest = { cash: cash, date: dateStr };
+    }
+
+    // 5) Weeks: Week 1 = days 0-6, Week 2 = days 7-13, last week may be shorter.
+    var weeks = [];
+    for (var start = 0; start < horizonDays; start += 7) {
+      var end = Math.min(start + 6, horizonDays - 1);
+      var weekIncome = 0;
+      var weekExpenses = 0;
+      for (var j = start; j <= end; j++) {
+        weekIncome += incomeByDay[j];
+        weekExpenses += expenseByDay[j];
+      }
+      weeks.push({
+        label: "Week " + (weeks.length + 1),
+        income: weekIncome,
+        expenses: weekExpenses,
+        closingCash: days[end].cash
+      });
+    }
+
+    return {
+      horizonDays: horizonDays,
+      renewalRate: rate,
+      openingCash: openingCash,
+      totalIncome: runningIncome,
+      totalExpenses: runningExpenses,
+      endCash: days[horizonDays - 1].cash,
+      lowest: lowest,
+      firstNegativeDate: firstNegativeDate,
+      weeks: weeks
+    };
+  }
+
+  function fillForecastSettings() {
+    var openingEl = document.getElementById("forecast-opening-cash");
+    var rateEl = document.getElementById("forecast-renewal-rate");
+    if (openingEl) openingEl.value = String(Number(data.settings.openingCashBalance) || 0);
+    if (rateEl) rateEl.value = String(Math.round((Number(data.settings.renewalRate) || 0) * 10000) / 100);
+  }
+
+  function handleForecastSettingsSubmit(event) {
+    event.preventDefault();
+
+    var openingEl = document.getElementById("forecast-opening-cash");
+    var rateEl = document.getElementById("forecast-renewal-rate");
+    var errorEl = document.getElementById("forecast-settings-error");
+    var statusEl = document.getElementById("forecast-settings-status");
+
+    var openingText = openingEl ? openingEl.value.trim() : "";
+    var rateText = rateEl ? rateEl.value.trim() : "";
+    hideError(statusEl);
+
+    var opening = Number(openingText);
+    if (openingText === "" || isNaN(opening) || opening < 0) {
+      showError(errorEl, "Opening cash balance must be 0 or more");
+      return;
+    }
+    var ratePercent = Number(rateText);
+    if (rateText === "" || isNaN(ratePercent) || ratePercent < 0 || ratePercent > 100) {
+      showError(errorEl, "Renewal rate must be between 0 and 100");
+      return;
+    }
+
+    hideError(errorEl);
+    data.settings.openingCashBalance = opening;
+    data.settings.renewalRate = ratePercent / 100;
+    saveData();
+    showError(statusEl, "Settings saved");
+    renderForecast();
+  }
+
+  function syncHorizonButtons() {
+    var buttons = document.querySelectorAll(".forecast-horizon-btn");
+    for (var i = 0; i < buttons.length; i++) {
+      var active = Number(buttons[i].getAttribute("data-horizon")) === forecastHorizon;
+      buttons[i].classList.toggle("is-active", active);
+      buttons[i].setAttribute("aria-pressed", active ? "true" : "false");
+    }
+  }
+
+  function makeTableCell(text, negative) {
+    var td = document.createElement("td");
+    td.textContent = text;
+    if (negative) td.className = "is-negative";
+    return td;
+  }
+
+  function buildWeekRow(week) {
+    var tr = document.createElement("tr");
+
+    var label = document.createElement("th");
+    label.setAttribute("scope", "row");
+    label.textContent = week.label;
+    tr.appendChild(label);
+
+    tr.appendChild(makeTableCell(formatRs(week.income), false));
+    tr.appendChild(makeTableCell(formatRs(week.expenses), false));
+    tr.appendChild(makeTableCell(formatRs(week.closingCash), week.closingCash < 0));
+    return tr;
+  }
+
+  // Bar chart of closing cash per week, inline SVG. Zero line is drawn; negative weeks are red.
+  function buildClosingChart(weeks) {
+    var WIDTH = 320;
+    var HEIGHT = 200;
+    var TOP = 10;
+    var PLOT_BOTTOM = 170;
+
+    var minVal = 0;
+    var maxVal = 0;
+    weeks.forEach(function (week) {
+      minVal = Math.min(minVal, week.closingCash);
+      maxVal = Math.max(maxVal, week.closingCash);
+    });
+    var span = maxVal - minVal;
+    if (span === 0) span = 1;
+
+    function yOf(value) {
+      return TOP + ((maxVal - value) / span) * (PLOT_BOTTOM - TOP);
+    }
+
+    var svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("class", "forecast-svg");
+    svg.setAttribute("viewBox", "0 0 " + WIDTH + " " + HEIGHT);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Closing cash per week");
+
+    var zeroY = yOf(0);
+    var slotW = WIDTH / weeks.length;
+    var barW = slotW * 0.6;
+
+    weeks.forEach(function (week, i) {
+      var negative = week.closingCash < 0;
+      var valueY = yOf(week.closingCash);
+      var barTop = Math.min(valueY, zeroY);
+      var barH = Math.max(Math.abs(valueY - zeroY), 1);
+
+      var rect = document.createElementNS(SVG_NS, "rect");
+      rect.setAttribute("x", String(i * slotW + (slotW - barW) / 2));
+      rect.setAttribute("y", String(barTop));
+      rect.setAttribute("width", String(barW));
+      rect.setAttribute("height", String(barH));
+      rect.setAttribute("class", negative ? "forecast-bar is-negative" : "forecast-bar");
+
+      var title = document.createElementNS(SVG_NS, "title");
+      title.textContent = week.label + ": " + formatRs(week.closingCash);
+      rect.appendChild(title);
+      svg.appendChild(rect);
+
+      var label = document.createElementNS(SVG_NS, "text");
+      label.setAttribute("x", String(i * slotW + slotW / 2));
+      label.setAttribute("y", String(HEIGHT - 6));
+      label.setAttribute("class", "forecast-bar-label");
+      label.textContent = "W" + (i + 1);
+      svg.appendChild(label);
+    });
+
+    var zeroLine = document.createElementNS(SVG_NS, "line");
+    zeroLine.setAttribute("x1", "0");
+    zeroLine.setAttribute("x2", String(WIDTH));
+    zeroLine.setAttribute("y1", String(zeroY));
+    zeroLine.setAttribute("y2", String(zeroY));
+    zeroLine.setAttribute("class", "forecast-zero-line");
+    svg.appendChild(zeroLine);
+
+    return svg;
+  }
+
+  function renderForecast() {
+    var summaryEl = document.getElementById("forecast-summary");
+    var lowestEl = document.getElementById("forecast-lowest");
+    var warningEl = document.getElementById("forecast-warning");
+    var tableBody = document.getElementById("forecast-table-body");
+    var chartEl = document.getElementById("forecast-chart");
+    var assumptionsEl = document.getElementById("forecast-assumptions");
+    if (!summaryEl || !lowestEl || !warningEl || !tableBody || !chartEl || !assumptionsEl) return;
+
+    var result = computeForecast(forecastHorizon, data.settings.renewalRate, []);
+    syncHorizonButtons();
+
+    summaryEl.textContent = "";
+    summaryEl.appendChild(makeSummaryCard("Expected income", formatRs(result.totalIncome)));
+    summaryEl.appendChild(makeSummaryCard("Total expenses", formatRs(result.totalExpenses)));
+    summaryEl.appendChild(makeSummaryCard("Expected cash in " + forecastHorizon + " days", formatRs(result.endCash)));
+
+    lowestEl.textContent = "Lowest cash point: " + formatRs(result.lowest.cash) +
+      " on " + formatDisplayDate(result.lowest.date);
+
+    if (result.firstNegativeDate) {
+      warningEl.textContent = "Warning: cash goes below Rs 0 on " +
+        formatDisplayDate(result.firstNegativeDate) + ". Chase fees or plan for this gap.";
+      warningEl.hidden = false;
+    } else {
+      warningEl.textContent = "";
+      warningEl.hidden = true;
+    }
+
+    tableBody.textContent = "";
+    result.weeks.forEach(function (week) {
+      tableBody.appendChild(buildWeekRow(week));
+    });
+
+    chartEl.textContent = "";
+    chartEl.appendChild(buildClosingChart(result.weeks));
+
+    var pct = Math.round(result.renewalRate * 10000) / 100;
+    assumptionsEl.textContent = "Assumptions: overdue invoices are assumed collected in 7 days; " +
+      "renewals are counted at your renewal rate (" + pct + "%). " +
+      "This is an estimate based on sample data and your renewal rate, not a guarantee.";
+  }
+
+  function setupForecast() {
+    var form = document.getElementById("forecast-settings-form");
+    if (form) form.addEventListener("submit", handleForecastSettingsSubmit);
+
+    var buttons = document.querySelectorAll(".forecast-horizon-btn");
+    for (var i = 0; i < buttons.length; i++) {
+      buttons[i].addEventListener("click", function (event) {
+        forecastHorizon = Number(event.currentTarget.getAttribute("data-horizon"));
+        renderForecast();
+      });
+    }
+  }
+
   /* ---------- reset ---------- */
 
   function setupReset() {
@@ -1265,6 +1595,7 @@
     setupInvoiceList();
     setupInvoiceView();
     setupExpenseForm();
+    setupForecast();
     setupReset();
     renderInvoices();
     renderExpenses();

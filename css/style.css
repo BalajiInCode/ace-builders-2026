@@ -473,3 +473,135 @@ body {
   }
 }
 
+/* Forecast */
+.forecast-settings {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
+
+.form-status {
+  color: #15803d;
+  margin: 0;
+}
+
+.forecast-horizon {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.forecast-horizon-btn {
+  flex: 1 1 0;
+  min-height: 40px;
+  padding: 0.4rem 0.75rem;
+  background: #ffffff;
+  color: #1d4ed8;
+  border-color: #d9dee5;
+}
+
+.forecast-horizon-btn.is-active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.forecast-lowest {
+  margin: 0 0 0.5rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.forecast-warning {
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.75rem;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #ffffff;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.forecast-table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.forecast-table th,
+.forecast-table td {
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #d9dee5;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.forecast-table th:first-child,
+.forecast-table td:first-child {
+  text-align: left;
+}
+
+.forecast-table thead th {
+  background: #f4f6f8;
+  color: #52606d;
+  font-weight: 600;
+}
+
+.forecast-table td.is-negative {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.forecast-chart {
+  background: #ffffff;
+  border: 1px solid #d9dee5;
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.forecast-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.forecast-bar {
+  fill: #1d4ed8;
+}
+
+.forecast-bar.is-negative {
+  fill: #b91c1c;
+}
+
+.forecast-zero-line {
+  stroke: #52606d;
+  stroke-width: 1;
+}
+
+.forecast-bar-label {
+  font-size: 11px;
+  fill: #52606d;
+  text-anchor: middle;
+}
+
+.forecast-assumptions {
+  font-size: 0.85rem;
+  color: #52606d;
+}
+
+@media (min-width: 768px) {
+  .forecast-settings,
+  .forecast-horizon {
+    max-width: 480px;
+  }
+}
+
