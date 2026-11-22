@@ -24,6 +24,8 @@ The owner of a small gym with 1-5 staff and about 40-60 members, usually working
 ## How the forecast works
 - Cash = opening cash + expected income - expenses, day by day.
 - Expected income = pending invoices on their due dates + overdue invoices (assumed collected 7 days from today) + renewals (renewal rate x member fee on each plan end date).
+- Members whose plan has already ended are not counted as renewals.
+- After a renewal, the next renewal is counted again after the plan length (30 / 90 / 365 days) if it falls inside the horizon.
 - A member's current pending invoice is never counted again as renewal income.
 - Monthly expenses repeat every month.
 - Both the opening cash and the renewal rate can be edited by the owner. The what-if never changes saved data.
@@ -32,7 +34,8 @@ The owner of a small gym with 1-5 staff and about 40-60 members, usually working
 The owner loses money when members quietly do not renew and when fees are chased late. GymKhata shows who to remind and what cash to expect.
 - **Customer:** small independent gym and fitness studio owners.
 - **Proposed price:** Rs 199-499 per month (an assumption, not a fact).
-- **Why they would pay:** for example, if 5 members do not renew at Rs 800 each, the owner loses Rs 4,000 a month. Timely reminders and a cash forecast help recover part of that.
+- **Why they would pay:** if 5 members do not renew at Rs 1,000 each, the owner loses Rs 5,000 a month. A single recovered monthly renewal (Rs 1,000) is already more than the Rs 499 price.
+- **Next step:** validate the price and the renewal rate by talking to a few real gym owners.
 
 ## Run it
 No install needed. Open `index.html` in a browser. Data is stored in the browser's localStorage, and sample data loads automatically on first open. Use **Reset demo data** (Invoices & Expenses tab) to start over.
@@ -42,10 +45,10 @@ No install needed. Open `index.html` in a browser. Data is stored in the browser
 - Payments are only tracked, not collected. There is no payment gateway.
 - The renewal rate, opening cash and price are assumptions. The forecast is an estimate, not a guarantee.
 - Reminders come from fixed templates. There is no live AI and no network call in the app.
-- Out of scope: attendance, diet and workout tracking, login, backend or database.
+- Out of scope: adding members, attendance, diet and workout tracking, login, backend or database.
 
 ## How it was built
 - **Tech:** plain HTML, CSS and JavaScript, no frameworks and no backend.
-- **Code:** all code was generated with the Codebenders IDE (Nexen), one feature at a time, testing and committing after each step. The prompt log is in [`PROMPTS.md`](PROMPTS.md).
-- **Planning:** the problem choice, [`SPEC.md`](SPEC.md) and the feature briefs were planned with an external chat AI (Claude) for brainstorming and planning only.
-- **Testing:** each feature was opened in a browser, and the forecast numbers were checked against an independent calculation.
+- **Code:** all code was generated with the Codebenders IDE (Nexen), one feature at a time, committing to GitHub after each step. The prompt log is in [`PROMPTS.md`](PROMPTS.md).
+- **Planning:** the problem choice, [`SPEC.md`](SPEC.md) and the feature briefs were planned with an external chat AI (Claude) for brainstorming and planning.
+- **Testing:** each tab was checked in a browser at phone width, and the forecast numbers were verified against an independent calculation. These checks were run with an external AI assistant (Claude) for testing only; it did not write any of the app's code.
