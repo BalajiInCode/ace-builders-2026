@@ -1,7 +1,6 @@
 # GymKhata
 
-A simple back-office app for a small gym owner (PS1: The One-Person Back Office).
-Built for ACE Builders Hackathon 2026 using the Codebenders IDE (Nexen).
+A simple back-office app for a small gym owner (PS1: The One-Person Back Office). Built for ACE Builders Hackathon 2026 using the Codebenders IDE (Nexen).
 
 ## Problem
 Small gym owners track memberships in a register and WhatsApp. They forget who is about to expire, fees come in late, and rent, electricity and trainer salary are due on time anyway. The owner never knows how much cash will be left in the next 2-3 months.
@@ -29,6 +28,8 @@ Storage is the browser's localStorage. Sample data (15-20 fake members, some lat
 ## Forecast Formula
 - Cash at any future date = opening cash balance + expected income - expenses due up to that date.
 - Expected income = pending invoices on their due dates + (members whose plan expires in the period x renewal rate x their fee).
+- Overdue invoices (due date already passed) are assumed to be collected 7 days from today.
+- Renewal income is counted only for the next period after a plan ends. A member's current pending invoice is never counted as renewal income.
 - Expenses = expenses on their due dates (monthly ones repeat).
 - What-if changes the renewal rate (or marks some members as not renewing) and recalculates the same formula.
 
