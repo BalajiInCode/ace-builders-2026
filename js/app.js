@@ -52,10 +52,13 @@
     var today = todayMidnight();
     var members = [];
     var invoices = [];
+    // Overdue members (category 2: i = 2, 5, 8, 11, 14, 17) get these plans and days overdue.
+    var OVERDUE_PLANS = { 2: "monthly", 5: "monthly", 8: "3 months", 11: "3 months", 14: "yearly", 17: "yearly" };
+    var OVERDUE_DAYS = { 2: 3, 5: 5, 8: 8, 11: 12, 14: 18, 17: 25 };
 
     for (var i = 0; i < 18; i++) {
       var id = "M" + pad2(i + 1);
-      var plan = PLANS[i % 3];
+      var plan = (i % 3 === 2) ? OVERDUE_PLANS[i] : PLANS[i % 3];
       var endDate = addDays(today, END_OFFSETS[i]);
       var startDate = addDays(endDate, -DURATION_DAYS[plan]);
       var fee = FEES[plan];
@@ -89,8 +92,8 @@
         paidDate = null;
       } else {
         // Pending, overdue
-        issueDate = addDays(today, -20);
-        dueDate = addDays(today, -10);
+        dueDate = addDays(today, -OVERDUE_DAYS[i]);
+        issueDate = addDays(dueDate, -7);
         status = "pending";
         paidDate = null;
       }
@@ -119,7 +122,7 @@
       members: members,
       invoices: invoices,
       expenses: expenses,
-      settings: { renewalRate: 0.7, openingCashBalance: 50000 }
+      settings: { renewalRate: 0.7, openingCashBalance: 85000 }
     };
   }
 
@@ -230,7 +233,7 @@
     makeDetailRow(dl, "Plan", member.plan);
     makeDetailRow(dl, "Start", member.startDate);
     makeDetailRow(dl, "End", member.endDate);
-    makeDetailRow(dl, "Fee", String(member.fee));
+    makeDetailRow(dl, "Fee", formatRs(member.fee));
     makeDetailRow(dl, "Phone", member.phone);
     li.appendChild(dl);
 
@@ -1043,8 +1046,9 @@
       return "Hello " + name + ", your fee of " + amount + " has been pending since " + due +
         " (" + dayCountText(entry.daysOverdue) + " overdue). Please pay at your earliest convenience. Thank you!";
     }
+    var daysText = entry.daysOverdue === 1 ? "(1 din ho gaya)" : "(" + entry.daysOverdue + " din ho gaye)";
     return "Namaste " + name + " ji, aapki " + amount + " ki fees " + due +
-      " se " + entry.daysOverdue + " din se baaki hai. Kripya jaldi jama kar dein. Dhanyavaad!";
+      " se baaki hai " + daysText + ". Kripya jaldi jama kar dein. Dhanyavaad!";
   }
 
   function renewalMessage(entry, lang) {
