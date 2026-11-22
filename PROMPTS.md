@@ -21,3 +21,9 @@
 **Result:** Dashboard built in index.html, js/app.js and css/style.css.
 **Issues:** Nexen asked where to put a temporary test script; I chose a scratch folder inside the project.
 **Checked:** Cards, sorting, expiring list match the Members badges; marking an invoice paid changes the Dashboard numbers.
+
+## Prompt 4: Reminders
+**Prompt:** Build the Reminders tab: payment and renewal reminder cards, Hindi (Roman script) and English templates, copy button with fallback, empty states, refreshes on every open.
+**Result:** Reminders built in index.html, js/app.js and css/style.css.
+**Issues:** None. Nexen noted the copy button and empty state were untested, so I tested them myself.
+**Checked:** Language switch, copy to clipboard, fallback, and the empty list after paying all invoices.

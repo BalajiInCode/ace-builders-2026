@@ -273,6 +273,7 @@
         tabs[j].setAttribute("aria-selected", active ? "true" : "false");
       }
       if (targetId === "dashboard") renderDashboard();
+      if (targetId === "reminders") renderReminders();
     }
 
     for (var k = 0; k < tabs.length; k++) {
@@ -303,6 +304,13 @@
     return Math.round((to - from) / 86400000);
   }
 
+  // "2026-11-12" -> "12 Nov 2026"
+  function formatDisplayDate(str) {
+    var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    var d = parseISODate(str);
+    if (!d) return "";
+    return d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
+  }
 
   /* ---------- data access ---------- */
 
@@ -954,6 +962,267 @@
     } else {
       expiring.forEach(function (member) {
         expiringEl.appendChild(buildExpiringItem(member, today));
+      });
+    }
+  }
+
+  /* ---------- reminders ---------- */
+
+  function buildPaymentReminders(today) {
+    var todayStr = toISODate(today);
+    var groups = {};
+    var entries = [];
+
+    data.invoices.forEach(function (invoice) {
+      if (!isOverdue(invoice, todayStr)) return;
+
+      var member = findMember(invoice.memberId);
+      if (!member) return;
+
+      var entry = groups[member.id];
+      if (!entry) {
+        entry = { member: member, total: 0, oldestDue: invoice.dueDate, daysOverdue: 0 };
+        groups[member.id] = entry;
+        entries.push(entry);
+      }
+
+      entry.total += Number(invoice.amount);
+      if (invoice.dueDate < entry.oldestDue) entry.oldestDue = invoice.dueDate;
+    });
+
+    entries.forEach(function (entry) {
+      entry.daysOverdue = daysBetween(parseISODate(entry.oldestDue), today);
+    });
+
+    entries.sort(function (a, b) {
+      if (a.daysOverdue !== b.daysOverdue) return b.daysOverdue - a.daysOverdue;
+      return b.total - a.total;
+    });
+
+    return entries;
+  }
+
+  function buildRenewalReminders(today) {
+    var entries = [];
+
+    data.members.forEach(function (member) {
+      if (!isExpiringSoon(member, today)) return;
+      entries.push({ member: member, daysLeft: daysBetween(today, parseISODate(member.endDate)) });
+    });
+
+    entries.sort(function (a, b) {
+      return a.member.endDate < b.member.endDate ? -1 : (a.member.endDate > b.member.endDate ? 1 : 0);
+    });
+
+    return entries;
+  }
+
+  function dayCountText(n) {
+    return n + (n === 1 ? " day" : " days");
+  }
+
+  function paymentReason(entry) {
+    return "Overdue by " + dayCountText(entry.daysOverdue) + ", " + formatRs(entry.total);
+  }
+
+  function renewalReason(entry) {
+    return entry.daysLeft === 0 ? "Plan ends today" : "Plan ends in " + dayCountText(entry.daysLeft);
+  }
+
+  // Fixed templates only. lang is "hi" (Hindi in Roman script) or "en".
+  function paymentMessage(entry, lang) {
+    var name = entry.member.name;
+    var amount = formatRs(entry.total);
+    var due = formatDisplayDate(entry.oldestDue);
+
+    if (lang === "en") {
+      return "Hello " + name + ", your fee of " + amount + " has been pending since " + due +
+        " (" + dayCountText(entry.daysOverdue) + " overdue). Please pay at your earliest convenience. Thank you!";
+    }
+    return "Namaste " + name + " ji, aapki " + amount + " ki fees " + due +
+      " se " + entry.daysOverdue + " din se baaki hai. Kripya jaldi jama kar dein. Dhanyavaad!";
+  }
+
+  function renewalMessage(entry, lang) {
+    var member = entry.member;
+    var endDate = formatDisplayDate(member.endDate);
+    var fee = formatRs(member.fee);
+
+    if (lang === "en") {
+      var whenEn = entry.daysLeft === 0 ? "today" : "in " + dayCountText(entry.daysLeft);
+      return "Hello " + member.name + ", your " + member.plan + " plan ends " + whenEn +
+        " (" + endDate + "). The renewal fee is " + fee + ". Please renew to keep training without a break. Thank you!";
+    }
+    var whenHi = entry.daysLeft === 0 ? "aaj" : entry.daysLeft + " din mein";
+    return "Namaste " + member.name + " ji, aapka " + member.plan + " plan " + whenHi +
+      " khatm ho raha hai (" + endDate + "). Renewal fees " + fee + " hai. Renew karne ke liye kripya sampark karein. Dhanyavaad!";
+  }
+
+  function copyWithTextarea(text) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+
+    var ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  function selectNodeText(el) {
+    if (!window.getSelection || !document.createRange) return;
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function copyReminderText(messageEl, button, note) {
+    var text = messageEl.textContent;
+
+    function onCopied() {
+      note.hidden = true;
+      note.textContent = "";
+      button.textContent = "Copied!";
+      setTimeout(function () {
+        button.textContent = "Copy message";
+      }, 1500);
+    }
+
+    function onFailed() {
+      note.textContent = "Select the text and copy it manually";
+      note.hidden = false;
+      selectNodeText(messageEl);
+    }
+
+    function fallbackCopy() {
+      if (copyWithTextarea(text)) onCopied();
+      else onFailed();
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onCopied, fallbackCopy);
+    } else {
+      fallbackCopy();
+    }
+  }
+
+  function buildReminderCard(name, reason, reasonClass, buildText) {
+    var li = document.createElement("li");
+    li.className = "reminder-card";
+
+    var header = document.createElement("div");
+    header.className = "reminder-card-header";
+
+    var nameEl = document.createElement("h3");
+    nameEl.className = "reminder-name";
+    nameEl.textContent = name;
+    header.appendChild(nameEl);
+
+    var reasonEl = document.createElement("span");
+    reasonEl.className = reasonClass;
+    reasonEl.textContent = reason;
+    header.appendChild(reasonEl);
+
+    li.appendChild(header);
+
+    var langRow = document.createElement("div");
+    langRow.className = "reminder-lang";
+    var langBtns = [];
+    [["hi", "Hindi"], ["en", "English"]].forEach(function (pair) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn reminder-lang-btn";
+      btn.setAttribute("data-lang", pair[0]);
+      btn.textContent = pair[1];
+      langRow.appendChild(btn);
+      langBtns.push(btn);
+    });
+    li.appendChild(langRow);
+
+    var message = document.createElement("p");
+    message.className = "reminder-message";
+    li.appendChild(message);
+
+    var copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "btn btn-primary reminder-copy-btn";
+    copyBtn.textContent = "Copy message";
+    li.appendChild(copyBtn);
+
+    var note = document.createElement("p");
+    note.className = "reminder-copy-note";
+    note.setAttribute("role", "status");
+    note.hidden = true;
+    li.appendChild(note);
+
+    function showLanguage(lang) {
+      message.textContent = buildText(lang);
+      langBtns.forEach(function (btn) {
+        var active = btn.getAttribute("data-lang") === lang;
+        btn.classList.toggle("is-active", active);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    }
+
+    langBtns.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        showLanguage(btn.getAttribute("data-lang"));
+      });
+    });
+
+    copyBtn.addEventListener("click", function () {
+      copyReminderText(message, copyBtn, note);
+    });
+
+    showLanguage("hi");
+    return li;
+  }
+
+  function renderReminders() {
+    var paymentEl = document.getElementById("reminders-payment-list");
+    var renewalEl = document.getElementById("reminders-renewal-list");
+    if (!paymentEl || !renewalEl) return;
+
+    var today = todayMidnight();
+
+    paymentEl.textContent = "";
+    var payments = buildPaymentReminders(today);
+    if (!payments.length) {
+      paymentEl.appendChild(makeEmptyItem("No overdue payments to remind"));
+    } else {
+      payments.forEach(function (entry) {
+        paymentEl.appendChild(buildReminderCard(
+          entry.member.name,
+          paymentReason(entry),
+          "invoice-overdue",
+          function (lang) { return paymentMessage(entry, lang); }
+        ));
+      });
+    }
+
+    renewalEl.textContent = "";
+    var renewals = buildRenewalReminders(today);
+    if (!renewals.length) {
+      renewalEl.appendChild(makeEmptyItem("No plans ending in the next 7 days"));
+    } else {
+      renewals.forEach(function (entry) {
+        renewalEl.appendChild(buildReminderCard(
+          entry.member.name,
+          renewalReason(entry),
+          "badge badge-expiring",
+          function (lang) { return renewalMessage(entry, lang); }
+        ));
       });
     }
   }
